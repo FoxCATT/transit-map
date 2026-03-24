@@ -23,3 +23,9 @@ docs/*
 !docs/*.md
 !docs/*.tex
 !docs/*.pdf
+
+# Data files (except scripts)
+data/
+examples/*.input.json
+examples/*.svg
+test_scip/
