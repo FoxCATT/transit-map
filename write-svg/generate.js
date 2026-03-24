@@ -53,16 +53,34 @@ const renderStations = (graph, reportBbox) => (station) => {
 	else radius = 0.1
 
 	const c = station.metadata
+	const cx = f(c.x)
+	const cy = f(c.y)
 	reportBbox(c.y - radius, c.x - radius, c.y + radius, c.x + radius)
-	return h('circle', {
-		class: isTransitNode ? 'station transit' : 'station',
-		'data-id': station.id,
-		'data-label': station.label,
-		cx: f(c.x),
-		cy: f(c.y),
-		r: radius + '',
-		fill: color,
-	})
+	
+	const cxNum = c.x
+	const cyNum = c.y
+	reportBbox(cyNum - radius - 1.5, cxNum - radius, cyNum + radius, cxNum + radius + 10)
+	
+	return h('g', {
+		class: 'station-group',
+	}, [
+		h('circle', {
+			class: isTransitNode ? 'station transit' : 'station',
+			'data-id': station.id,
+			'data-label': station.label,
+			cx: cx,
+			cy: cy,
+			r: radius + '',
+			fill: color,
+		}),
+		h('text', {
+			x: cx + radius + 0.3,
+			y: cy,
+			class: 'station-label',
+			'text-anchor': 'start',
+			'dominant-baseline': 'middle'
+		}, station.label)
+	])
 }
 
 const generate = (graph, invertY) => {

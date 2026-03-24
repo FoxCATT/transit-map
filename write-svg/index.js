@@ -20,6 +20,11 @@ const styles = h('style', {}, `
 		stroke-width: .05;
 		fill: #fff;
 	}
+	.station-label {
+		font-size: 0.6px;
+		fill: #333;
+		font-family: Arial, sans-serif;
+	}
 `)
 
 const graphToSVG = (graph, invertY) => {
