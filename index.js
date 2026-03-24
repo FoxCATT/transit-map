@@ -42,9 +42,15 @@ const runSolver = (cwd, verbose=false) => {
     const problemPath = path.resolve(cwd, 'problem.lp')
     const solutionPath = path.resolve(cwd, 'solution.sol')
 
-    const solverPromise = spawn('cbc.exe',  [problemPath, 'solve', 'solu', solutionPath], {cwd})
+    const solverPath = 'D:/Program Files/SCIPOptSuite 10.0.1/bin/scip.exe'
+    const solverPromise = spawn(solverPath, [
+        '-c', `read ${problemPath}`,
+        '-c', 'optimize',
+        '-c', `write solution ${solutionPath}`,
+        '-c', 'quit'
+    ], {cwd})
 
-    if (verbose) solverPromise.childProcess.stdout.pipe(process.stderr) // sic.
+    if (verbose) solverPromise.childProcess.stdout.pipe(process.stderr)
     solverPromise.childProcess.stderr.on('data', e => {throw new Error(e)})
     return solverPromise
 }
@@ -62,7 +68,7 @@ const transitMap = async (networkGraph, opt) => {
 
     // run solver
     await (runSolver(options.workDir, options.verbose).catch(e => {
-        console.error('Make sure `cbc.exe` is in your $PATH')
+        console.error('SCIP solver error')
         throw new Error(e)
     }))
 

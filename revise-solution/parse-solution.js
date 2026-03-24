@@ -13,13 +13,17 @@ const parseSolution = async (stream) => {
         .pipe(splitLines())
         .pipe(skipChunks(1))
         .pipe(map(e => shortenWhiteSpace(e.toString())))
-        .pipe(filter(e => !!e))
-        .pipe(map(e => csv.parse(e, ' ')[0]))
+        .pipe(filter(e => !!e && !e.startsWith('solution') && !e.startsWith('objective')))
 
     const rows = await toArray(reader)
     const solution = {}
     for (let row of rows) {
-        solution[row[1]] = +row[2]
+        const parts = row.split(' ')
+        if (parts.length >= 2) {
+            const varName = parts[0]
+            const varValue = parseFloat(parts[1])
+            solution[varName] = varValue
+        }
     }
 
     return solution
