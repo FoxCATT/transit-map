@@ -26,6 +26,7 @@ const settings = {
 
 // script default options
 const defaults = {
+    scipPath: 'scip',
     smooth: { tension: 0.5, minBendDeg: 15, remapStations: true },
     workDir: null,
     verbose: false
@@ -39,12 +40,12 @@ const Solver = (networkGraph) => {
     return ({generateLP, reviseSolution})
 }
 
-const runSolver = (cwd, verbose=false) => {
+const runSolver = (cwd, solverPath, verbose=false) => {
     // todo: escape paths?
     const problemPath = path.resolve(cwd, 'problem.lp')
     const solutionPath = path.resolve(cwd, 'solution.sol')
 
-    const solverPath = 'D:/Program Files/SCIPOptSuite 10.0.1/bin/scip.exe'
+
     const solverPromise = spawn(solverPath, [
         '-c', `read ${problemPath}`,
         '-c', 'optimize',
@@ -69,12 +70,16 @@ const transitMap = async (networkGraph, opt) => {
     await solver.generateLP(lpStream)
 
     // run solver
-    await (runSolver(options.workDir, options.verbose).catch(e => {
+    await (runSolver(options.workDir, options.scipPath, options.verbose).catch(e => {
         console.error('SCIP solver error')
         throw new Error(e)
     }))
 
     // read solution file
+    const solutionContent = fs.readFileSync(path.resolve(options.workDir, 'solution.sol'), 'utf8')
+    if (solutionContent.includes('infeasible')) {
+        throw new Error('SCIP solver: problem is infeasible')
+    }
     const solStream = fs.createReadStream(path.resolve(options.workDir, 'solution.sol'))
     const solution = await solver.reviseSolution(solStream)
 
