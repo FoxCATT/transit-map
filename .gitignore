@@ -29,3 +29,4 @@ data/
 examples/*.input.json
 examples/*.svg
 test_scip/
+output/

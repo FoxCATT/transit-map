@@ -10,6 +10,7 @@ const fs = require('fs')
 const prepareGraph = require('./prepare-graph')
 const createGenerateLP = require('./generate-lp')
 const createReviseSolution = require('./revise-solution')
+const smoothBezier = require('./smooth-bezier')
 
 tmp.setGracefulCleanup() // clean up even on errors
 const pTmpDir = pify(tmp.dir)
@@ -25,6 +26,7 @@ const settings = {
 
 // script default options
 const defaults = {
+    smooth: { tension: 0.5, minBendDeg: 15, remapStations: true },
     workDir: null,
     verbose: false
 }
@@ -76,7 +78,8 @@ const transitMap = async (networkGraph, opt) => {
     const solStream = fs.createReadStream(path.resolve(options.workDir, 'solution.sol'))
     const solution = await solver.reviseSolution(solStream)
 
-    return solution
+    const smoothed = smoothBezier.smoothTransitMap(solution, null, options.smooth)
+    return smoothed
 }
 
 module.exports = transitMap
