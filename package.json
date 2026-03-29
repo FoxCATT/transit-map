@@ -37,6 +37,7 @@
 		"lodash": "^4.17.10",
 		"mri": "^1.1.1",
 		"pify": "^3.0.0",
+		"pptxgenjs": "^4.0.1",
 		"randomatic": "^3.0.0",
 		"read-file": "^0.2.0",
 		"robust-determinant": "^1.1.0",
