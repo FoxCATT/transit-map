@@ -13,26 +13,48 @@ function extractLine(d, lineId) {
   return { nodes, edges };
 }
 
-function mergeSolutions(lineSolutions) {
+function mergeSolutions(lineSolutions, originalNodes, originalEdges) {
   const nodeMap = new Map();
   const allEdges = [];
+  const nodeSources = new Map();
   
   lineSolutions.forEach(ls => {
     ls.solution.nodes.forEach(n => {
       if (!nodeMap.has(n.id)) {
         nodeMap.set(n.id, n);
+        nodeSources.set(n.id, [n]);
       } else {
         const existing = nodeMap.get(n.id);
+        const sources = nodeSources.get(n.id);
+        sources.push(n);
         if (n.metadata && existing.metadata) {
-          existing.metadata.x = (existing.metadata.x + n.metadata.x) / 2;
-          existing.metadata.y = (existing.metadata.y + n.metadata.y) / 2;
+          let sumX = existing.metadata.x;
+          let sumY = existing.metadata.y;
+          sources.forEach(s => {
+            sumX += s.metadata.x;
+            sumY += s.metadata.y;
+          });
+          existing.metadata.x = sumX / sources.length;
+          existing.metadata.y = sumY / sources.length;
         }
       }
     });
     allEdges.push(...ls.solution.edges);
   });
   
-  return { nodes: [...nodeMap.values()], edges: allEdges };
+  const nodeWithEdges = new Set();
+  allEdges.forEach(e => {
+    nodeWithEdges.add(e.source);
+    nodeWithEdges.add(e.target);
+  });
+  
+  const mergedNodes = [...nodeMap.values()].filter(n => nodeWithEdges.has(n.id));
+  const mergedNodeIds = new Set(mergedNodes.map(n => n.id));
+  const filteredEdges = allEdges.filter(e => 
+    mergedNodeIds.has(e.source) && mergedNodeIds.has(e.target)
+  );
+  
+  return { nodes: mergedNodes, edges: filteredEdges };
 }
 
 async function solveSeparate(d, cityName, workDir) {
@@ -42,6 +64,7 @@ async function solveSeparate(d, cityName, workDir) {
   console.log('City: ' + cityName + ' has ' + lines.size + ' lines');
   
   const solvedLines = [];
+  const failedLines = [];
   
   for (const lineId of lines) {
     const lineData = extractLine(d, lineId);
@@ -59,17 +82,18 @@ async function solveSeparate(d, cityName, workDir) {
       console.log('Line ' + lineId + ': OK');
     } catch (e) {
       console.log('Line ' + lineId + ': FAIL - ' + e.message.substring(0, 30));
+      failedLines.push(lineId);
     }
   }
+  
+  console.log('Solved: ' + solvedLines.length + ' lines, Failed: ' + failedLines.length + ' lines');
   
   if (solvedLines.length === 0) {
     throw new Error('No lines solved');
   }
   
-  // Merge solutions using average position for transfer nodes
-  const merged = mergeSolutions(solvedLines);
+  const merged = mergeSolutions(solvedLines, d.nodes, d.edges);
   
-  // Generate SVG from merged solution
   const graphToSVG = require('../write-svg/index');
   const svgToString = require('virtual-dom-stringify');
   const svg = graphToSVG(merged, true);
