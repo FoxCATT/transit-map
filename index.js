@@ -11,11 +11,12 @@ const prepareGraph = require('./prepare-graph')
 const createGenerateLP = require('./generate-lp')
 const createReviseSolution = require('./revise-solution')
 const smoothBezier = require('./smooth-bezier')
+const graphToSVG = require('./write-svg/index')
+const svgToString = require('virtual-dom-stringify')
 
-tmp.setGracefulCleanup() // clean up even on errors
+tmp.setGracefulCleanup()
 const pTmpDir = pify(tmp.dir)
 
-// solver settings
 const settings = {
     offset: 10000,
     maxWidth: 300,
@@ -24,12 +25,13 @@ const settings = {
     maxEdgeLength: 8
 }
 
-// script default options
 const defaults = {
-    scipPath: 'scip',
+    scipPath: 'D:/Program Files/SCIPOptSuite 10.0.1/bin/scip.exe',
     smooth: { tension: 0.5, minBendDeg: 15, remapStations: true },
     workDir: null,
-    verbose: false
+    verbose: false,
+    invertY: false,
+    returnGraph: false
 }
 
 const Solver = (networkGraph) => {
@@ -41,10 +43,8 @@ const Solver = (networkGraph) => {
 }
 
 const runSolver = (cwd, solverPath, verbose=false) => {
-    // todo: escape paths?
     const problemPath = path.resolve(cwd, 'problem.lp')
     const solutionPath = path.resolve(cwd, 'solution.sol')
-
 
     const solverPromise = spawn(solverPath, [
         '-c', `read ${problemPath}`,
@@ -59,23 +59,19 @@ const runSolver = (cwd, solverPath, verbose=false) => {
 }
 
 const transitMap = async (networkGraph, opt) => {
-    // prepare
     const options = l.merge({}, defaults, opt)
     if (!options.workDir) options.workDir = await pTmpDir({prefix: 'transit-map-'})
 
     const solver = Solver(networkGraph)
 
-    // write problem file
     const lpStream = fs.createWriteStream(path.resolve(options.workDir, 'problem.lp'))
     await solver.generateLP(lpStream)
 
-    // run solver
     await (runSolver(options.workDir, options.scipPath, options.verbose).catch(e => {
         console.error('SCIP solver error')
         throw new Error(e)
     }))
 
-    // read solution file
     const solutionContent = fs.readFileSync(path.resolve(options.workDir, 'solution.sol'), 'utf8')
     if (solutionContent.includes('infeasible')) {
         throw new Error('SCIP solver: problem is infeasible')
@@ -84,7 +80,13 @@ const transitMap = async (networkGraph, opt) => {
     const solution = await solver.reviseSolution(solStream)
 
     const smoothed = smoothBezier.smoothTransitMap(solution, null, options.smooth)
-    return smoothed
+
+    if (options.returnGraph) {
+        return smoothed
+    }
+
+    const svg = graphToSVG(smoothed, options.invertY)
+    return svgToString(svg)
 }
 
 module.exports = transitMap

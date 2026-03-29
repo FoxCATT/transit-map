@@ -30,3 +30,23 @@ examples/*.input.json
 examples/*.svg
 test_scip/
 output/
+
+# LP solver files
+*.lp
+*.sol
+*.mps
+*.set
+
+# Test directories
+test-*/
+output/test*/
+output/gen*/
+output/*_*/
+output/jinan*/
+output/ningbo*/
+output/haerbin*/
+output/test_*/
+output/test2_*/
+
+# Temporary files
+*.bak
