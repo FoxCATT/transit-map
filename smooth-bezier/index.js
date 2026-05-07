@@ -162,58 +162,120 @@ function buildLineMap(graph) {
   const result = new Map()
   const loopSet = new Map()   // lineId → boolean (first segment is a loop)
 
+  function ordered(values) {
+    return Array.from(values).sort()
+  }
+
+  function edgeKey(a, b) {
+    return [a, b].sort().join('|')
+  }
+
+  function collectComponent(start, lineAdj, seen) {
+    const component = []
+    const stack = [start]
+    seen.add(start)
+
+    while (stack.length > 0) {
+      const node = stack.pop()
+      component.push(node)
+      for (const next of lineAdj.get(node) || []) {
+        if (!seen.has(next)) {
+          seen.add(next)
+          stack.push(next)
+        }
+      }
+    }
+
+    return ordered(component)
+  }
+
+  function traceChain(start, firstNext, lineAdj, visitedEdges) {
+    const chain = [start]
+    let previous = start
+    let current = start
+    let next = firstNext
+
+    while (next) {
+      const key = edgeKey(current, next)
+      if (visitedEdges.has(key)) break
+
+      visitedEdges.add(key)
+      chain.push(next)
+
+      previous = current
+      current = next
+
+      const neighbours = ordered(lineAdj.get(current) || [])
+      if (neighbours.length !== 2) break
+
+      next = neighbours.find(n => n !== previous && !visitedEdges.has(edgeKey(current, n)))
+    }
+
+    return chain
+  }
+
+  function traceLoop(component, lineAdj, visitedEdges) {
+    const start = component[0]
+    const firstNext = ordered(lineAdj.get(start) || [])[0]
+    const chain = traceChain(start, firstNext, lineAdj, visitedEdges)
+
+    if (chain.length > 1 && chain[chain.length - 1] !== start) {
+      const last = chain[chain.length - 1]
+      if ((lineAdj.get(last) || new Set()).has(start) && !visitedEdges.has(edgeKey(last, start))) {
+        visitedEdges.add(edgeKey(last, start))
+        chain.push(start)
+      }
+    }
+
+    return chain
+  }
+
   for (const [lineId, lineAdj] of adj) {
-    // ── find all connected components in this line's subgraph ─────────────
-    const allNodes = new Set(lineAdj.keys())
-    const globalVisited = new Set()
-    const segments = []   // array of chains (each chain = nodeId[])
-    let firstIsLoop = false
+    const seenNodes = new Set()
+    const visitedEdges = new Set()
+    const segments = []
 
-    while (globalVisited.size < allNodes.size) {
-      // Pick an unvisited node. Prefer degree-1 nodes (termini) as start
-      // so the chain reads naturally from one end to the other.
-      let start = null
-      for (const [nId, nbrs] of lineAdj) {
-        if (!globalVisited.has(nId) && nbrs.size === 1) { start = nId; break }
+    for (const componentStart of ordered(lineAdj.keys())) {
+      if (seenNodes.has(componentStart)) continue
+
+      const component = collectComponent(componentStart, lineAdj, seenNodes)
+      const endpoints = component.filter(nodeId => (lineAdj.get(nodeId) || new Set()).size !== 2)
+
+      if (endpoints.length === 0) {
+        const loop = traceLoop(component, lineAdj, visitedEdges)
+        if (loop.length > 1) segments.push(loop)
+        continue
       }
-      if (!start) {
-        // No terminus found in this component → it's a loop or isolated node
-        for (const nId of allNodes) {
-          if (!globalVisited.has(nId)) { start = nId; break }
+
+      const starts = endpoints.sort((a, b) => {
+        const aDegree = (lineAdj.get(a) || new Set()).size
+        const bDegree = (lineAdj.get(b) || new Set()).size
+        if (aDegree === bDegree) return a.localeCompare(b)
+        if (aDegree === 1) return -1
+        if (bDegree === 1) return 1
+        return aDegree - bDegree
+      })
+
+      for (const start of starts) {
+        for (const next of ordered(lineAdj.get(start) || [])) {
+          if (visitedEdges.has(edgeKey(start, next))) continue
+          const chain = traceChain(start, next, lineAdj, visitedEdges)
+          if (chain.length > 1) segments.push(chain)
         }
       }
 
-      // Determine if this component is a loop (all degrees == 2, no terminus)
-      // by checking whether start has degree 1.
-      const isLoop = lineAdj.get(start).size !== 1
-
-      // Walk the chain
-      const chain = [start]
-      const visited = new Set([start])
-      globalVisited.add(start)
-      let current = start
-
-      while (true) {
-        let next = null
-        for (const n of lineAdj.get(current)) {
-          if (!visited.has(n)) { next = n; break }
+      // Pick up any leftover cycle edges attached to a branching component.
+      for (const node of component) {
+        for (const next of ordered(lineAdj.get(node) || [])) {
+          if (visitedEdges.has(edgeKey(node, next))) continue
+          const chain = traceChain(node, next, lineAdj, visitedEdges)
+          if (chain.length > 1) segments.push(chain)
         }
-        if (!next) break
-        chain.push(next)
-        visited.add(next)
-        globalVisited.add(next)
-        current = next
       }
-
-      // Close loop chains so first === last
-      if (isLoop) chain.push(start)
-
-      if (segments.length === 0) firstIsLoop = isLoop
-      segments.push(chain)
     }
 
     result.set(lineId, segments)
-    loopSet.set(lineId, firstIsLoop)
+    loopSet.set(lineId, segments.length > 0 && segments[0][0] === segments[0][segments[0].length - 1])
   }
 
   result.loopSet = loopSet
@@ -457,14 +519,14 @@ function smoothTransitMap(graph, lineMap, opts) {
         adjustedCoords.set(stationId, remapped)
       }
 
-      path.push({ id: inCtrlId,   x: inCtrlPos.x,  y: inCtrlPos.y,  virtual: true })
+      // Store the bend info for bezier edge generation
       path.push({
         id: stationId,
         x: adjustedCoords.get(stationId)?.x ?? pos.x,
         y: adjustedCoords.get(stationId)?.y ?? pos.y,
         virtual: false,
+        bezier: { inCtrl: inCtrlId, outCtrl: outCtrlId }
       })
-      path.push({ id: outCtrlId, x: outCtrlPos.x, y: outCtrlPos.y, virtual: true })
     }
 
     // Close loop path
@@ -475,17 +537,81 @@ function smoothTransitMap(graph, lineMap, opts) {
 
     // Convert path to edges
     for (let i = 0; i < path.length - 1; i++) {
-      const key = [path[i].id, path[i + 1].id, lineId].join('|')
-      if (!processedEdgeKey.has(key)) {
-        processedEdgeKey.add(key)
-        virtualEdges.push({
-          source: path[i].id,
-          target: path[i + 1].id,
-          metadata: {
-            lines: [lineId],
-            virtual: path[i].virtual || path[i + 1].virtual,
-          },
-        })
+      const curr = path[i]
+      const next = path[i + 1]
+
+      if (curr.bezier) {
+        // Bezier bend: create edges prev→inCtrl, inCtrl→outCtrl, outCtrl→next
+        const { inCtrl, outCtrl } = curr.bezier
+        const prev = path[i - 1]
+        const after = path[i + 1]
+
+        // prev → inCtrl (replace prev → curr)
+        if (prev && !prev.bezier) {
+          const key = [prev.id, inCtrl, lineId].join('|')
+          if (!processedEdgeKey.has(key)) {
+            processedEdgeKey.add(key)
+            virtualEdges.push({
+              source: prev.id, target: inCtrl,
+              metadata: { lines: [lineId], virtual: true },
+            })
+          }
+        }
+
+        // Station → inCtrl connector (keeps station degree > 0 for rendering)
+        {
+          const key = [curr.id, inCtrl, lineId].join('|')
+          if (!processedEdgeKey.has(key)) {
+            processedEdgeKey.add(key)
+            virtualEdges.push({
+              source: curr.id, target: inCtrl,
+              metadata: { lines: [lineId], virtual: true },
+            })
+          }
+        }
+
+        // inCtrl → outCtrl (Bezier edge)
+        {
+          const key = [inCtrl, outCtrl, lineId].join('|')
+          if (!processedEdgeKey.has(key)) {
+            processedEdgeKey.add(key)
+            const stationPos = adjustedCoords.get(curr.id) || coord(curr.id)
+            virtualEdges.push({
+              source: inCtrl, target: outCtrl,
+              metadata: {
+                lines: [lineId],
+                virtual: true,
+                bezierStation: { x: stationPos.x, y: stationPos.y }
+              },
+            })
+          }
+        }
+
+        // outCtrl → next (replace curr → next)
+        if (after && !after.bezier) {
+          const key = [outCtrl, after.id, lineId].join('|')
+          if (!processedEdgeKey.has(key)) {
+            processedEdgeKey.add(key)
+            virtualEdges.push({
+              source: outCtrl, target: after.id,
+              metadata: { lines: [lineId], virtual: true },
+            })
+          }
+        }
+      } else if (!next.bezier) {
+        // Only create direct edge if next is not a bezier bend
+        const key = [curr.id, next.id, lineId].join('|')
+        if (!processedEdgeKey.has(key)) {
+          processedEdgeKey.add(key)
+          virtualEdges.push({
+            source: curr.id,
+            target: next.id,
+            metadata: {
+              lines: [lineId],
+              virtual: curr.virtual || next.virtual,
+            },
+          })
+        }
       }
     }
   }

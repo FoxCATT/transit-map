@@ -18,7 +18,7 @@ const createSetProduct = (settings) => (product, continuous, binary) => {
 const createOctolinearityConstraints = (settings) => (graph, edge) => {
     const setProduct = createSetProduct(settings)
 
-    const [mainDirection, secondaryDirection] = edge.sourceDirections
+    const [mainDirection] = edge.sourceDirections
     const s = u.nodeIndex(graph, edge.source)
     const t = u.nodeIndex(graph, edge.target)
     const e = u.edgeIndex(graph, edge)
@@ -52,8 +52,6 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = c*l - d*l
             constraints.push(`a${e} = 0`)
             constraints.push(`b${e} = 1`)
-            if (secondaryDirection === 7) constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 1) constraints.push(`c${e} = 0`)
             break
         }
 
@@ -63,8 +61,7 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = -d*l
             constraints.push(`a${e} = 0`)
             constraints.push(`c${e} = 0`)
-            if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
-            if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
+            constraints.push(`b${e} + d${e} >= 1`)
             break
         }
 
@@ -74,8 +71,6 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = -l
             constraints.push(`c${e} = 0`)
             constraints.push(`d${e} = 1`)
-            if (secondaryDirection === 3) constraints.push(`b${e} = 0`)
-            if (secondaryDirection === 1) constraints.push(`a${e} = 0`)
             break
         }
 
@@ -85,8 +80,7 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = -d*l
             constraints.push(`b${e} = 0`)
             constraints.push(`c${e} = 0`)
-            if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
-            if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
+            constraints.push(`a${e} + d${e} >= 1`)
             break
         }
 
@@ -96,8 +90,6 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = c*l - d*l
             constraints.push(`a${e} = 1`)
             constraints.push(`b${e} = 0`)
-            if (secondaryDirection === 5) constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 3) constraints.push(`c${e} = 0`)
             break
         }
 
@@ -107,8 +99,7 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = c*l
             constraints.push(`b${e} = 0`)
             constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
-            if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
+            constraints.push(`a${e} + c${e} >= 1`)
             break
         }
 
@@ -118,8 +109,6 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = l
             constraints.push(`c${e} = 1`)
             constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 7) constraints.push(`a${e} = 0`)
-            if (secondaryDirection === 5) constraints.push(`b${e} = 0`)
             break
         }
 
@@ -129,8 +118,7 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
             // y2 - y1 = c*l
             constraints.push(`a${e} = 0`)
             constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
-            if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
+            constraints.push(`b${e} + c${e} >= 1`)
             break
         }
 

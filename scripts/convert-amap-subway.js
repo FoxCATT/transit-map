@@ -6,7 +6,31 @@ const examplesDir = path.join(__dirname, '../examples');
 
 function convertAmapToInput(amapData, cityName) {
   const nodesMap = new Map();
+  const sidToNodeId = new Map();
+  const edgesMap = new Map();
   const lines = [];
+
+  const stationKey = station => `${station.n}|${station.sl}`;
+
+  const getNodeId = station => {
+    if (sidToNodeId.has(station.sid)) return sidToNodeId.get(station.sid);
+
+    const [x, y] = station.sl.split(',').map(Number);
+    if (isNaN(x) || isNaN(y)) return null;
+
+    const key = stationKey(station);
+    if (!nodesMap.has(key)) {
+      nodesMap.set(key, {
+        id: station.sid,
+        label: station.n,
+        metadata: { x, y }
+      });
+    }
+
+    const nodeId = nodesMap.get(key).id;
+    sidToNodeId.set(station.sid, nodeId);
+    return nodeId;
+  };
 
   for (let lineIdx = 0; lineIdx < amapData.l.length; lineIdx++) {
     const line = amapData.l[lineIdx];
@@ -17,63 +41,40 @@ function convertAmapToInput(amapData, cityName) {
       color: '#' + line.cl
     });
     
-    const stations = line.st;
-    for (let i = 0; i < stations.length; i++) {
-      const station = stations[i];
-      if (!station.sl) continue;
-      
-      const [x, y] = station.sl.split(',').map(Number);
-      if (isNaN(x) || isNaN(y)) continue;
-      
-      if (!nodesMap.has(station.sid)) {
-        nodesMap.set(station.sid, {
-          id: station.sid,
-          label: station.n,
-          metadata: { x, y }
-        });
-      }
-    }
-  }
-
-  const edgesSet = new Set();
-  for (let lineIdx = 0; lineIdx < amapData.l.length; lineIdx++) {
-    const line = amapData.l[lineIdx];
     const stations = line.st.filter(s => s.sl);
+    for (const station of stations) {
+      getNodeId(station);
+    }
     
     for (let i = 0; i < stations.length - 1; i++) {
       const curr = stations[i];
       const next = stations[i + 1];
       if (!curr.sl || !next.sl) continue;
-      
-      const edgeKey = [curr.sid, next.sid].sort().join('-');
-      if (!edgesSet.has(edgeKey)) {
-        edgesSet.add(edgeKey);
+
+      const source = getNodeId(curr);
+      const target = getNodeId(next);
+      if (!source || !target || source === target) continue;
+
+      const edgeKey = [source, target].sort().join('-');
+      if (!edgesMap.has(edgeKey)) {
+        edgesMap.set(edgeKey, {
+          source,
+          target,
+          metadata: { lines: [] }
+        });
+      }
+
+      const edgeLines = edgesMap.get(edgeKey).metadata.lines;
+      const lineId = String(lineIdx);
+      if (!edgeLines.includes(lineId)) {
+        edgeLines.push(lineId);
       }
     }
   }
 
-  const edges = Array.from(edgesSet).map(key => {
-    const [source, target] = key.split('-');
-    
-    const lineIds = [];
-    for (let lineIdx = 0; lineIdx < amapData.l.length; lineIdx++) {
-      const line = amapData.l[lineIdx];
-      const stationIds = line.st.filter(s => s.sl).map(s => s.sid);
-      if (stationIds.includes(source) && stationIds.includes(target)) {
-        lineIds.push(String(lineIdx));
-      }
-    }
-    
-    return {
-      source,
-      target,
-      metadata: { lines: lineIds }
-    };
-  });
-
   return {
     nodes: Array.from(nodesMap.values()),
-    edges,
+    edges: Array.from(edgesMap.values()),
     lines
   };
 }
@@ -95,10 +96,14 @@ function processAllCities() {
     }
     
     const result = convertAmapToInput(amapData, cityName);
-    fs.writeFileSync(inputPath, JSON.stringify(result, null, 2, 'utf8'));
+    fs.writeFileSync(inputPath, JSON.stringify(result, null, 2), 'utf8');
     
     console.log(`${cityName}: ${result.nodes.length} nodes, ${result.edges.length} edges, ${result.lines.length} lines`);
   }
 }
 
-processAllCities();
+if (require.main === module) {
+  processAllCities();
+}
+
+module.exports = convertAmapToInput;

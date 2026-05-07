@@ -17,38 +17,25 @@ const getBezierPath = (graph, lineId, sourceId, targetId) => {
     const sourceNode = graph.nodes.find(n => n.id === sourceId)
     const targetNode = graph.nodes.find(n => n.id === targetId)
     if (!sourceNode || !targetNode) return null
-    
+
     const sourceIsVirtual = sourceNode.metadata && sourceNode.metadata.virtual
     const targetIsVirtual = targetNode.metadata && targetNode.metadata.virtual
-    
-    if (!sourceIsVirtual && !targetIsVirtual) return null
-    
+
+    if (!sourceIsVirtual || !targetIsVirtual) return null
+
+    // Check if this edge has bezierStation metadata from smoothBezier
     const lineEdges = graph.edges.filter(e => e.metadata.lines.includes(lineId))
-    
-    let stationNode = null
-    let inCtrl = null
-    let outCtrl = null
-    
-    if (sourceIsVirtual && targetIsVirtual) {
-        for (const edge of lineEdges) {
-            const other = edge.source === sourceId ? edge.target : (edge.target === sourceId ? edge.source : null)
-            if (other) {
-                const otherNode = graph.nodes.find(n => n.id === other)
-                if (otherNode && otherNode.metadata && !otherNode.metadata.virtual) {
-                    stationNode = otherNode
-                    inCtrl = sourceNode.metadata
-                    outCtrl = targetNode.metadata
-                    break
-                }
-            }
-        }
+    const bezierEdge = lineEdges.find(e =>
+        e.source === sourceId && e.target === targetId &&
+        e.metadata.bezierStation
+    )
+    if (bezierEdge) {
+        const s = bezierEdge.metadata.bezierStation
+        const sc = sourceNode.metadata
+        const tc = targetNode.metadata
+        return `M ${f(sc.x)} ${f(sc.y)} C ${f(s.x)} ${f(s.y)} ${f(s.x)} ${f(s.y)} ${f(tc.x)} ${f(tc.y)}`
     }
-    
-    if (stationNode && inCtrl && outCtrl) {
-        const s = stationNode.metadata
-        return `M ${f(s.x)} ${f(s.y)} L ${f(inCtrl.x)} ${f(inCtrl.y)} C ${f(inCtrl.x)} ${f(inCtrl.y)} ${f(outCtrl.x)} ${f(outCtrl.y)} ${f(outCtrl.x)} ${f(outCtrl.y)} L ${f(s.x)} ${f(s.y)}`
-    }
-    
+
     return null
 }
 

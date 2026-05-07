@@ -17,6 +17,34 @@ const createNotEqual = (settings) => (left, negativeRight, boolean) => {
     ]
 }
 
+const edgeLength = (graph, edge) => {
+    const source = graph.nodes.find(n => n.id === edge.source).metadata
+    const target = graph.nodes.find(n => n.id === edge.target).metadata
+    return Math.sqrt(Math.pow(source.x - target.x, 2) + Math.pow(source.y - target.y, 2))
+}
+
+const averageEdgeLength = (graph) => {
+    const lengths = graph.edges.map(e => edgeLength(graph, e))
+    return l.sum(lengths) / lengths.length
+}
+
+const edgeBounds = (graph, edge) => {
+    const source = graph.nodes.find(n => n.id === edge.source).metadata
+    const target = graph.nodes.find(n => n.id === edge.target).metadata
+    return {
+        minX: Math.min(source.x, target.x),
+        maxX: Math.max(source.x, target.x),
+        minY: Math.min(source.y, target.y),
+        maxY: Math.max(source.y, target.y)
+    }
+}
+
+const boundsGap = (a, b) => {
+    const dx = Math.max(0, a.minX - b.maxX, b.minX - a.maxX)
+    const dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY)
+    return Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2))
+}
+
 const createGenerateLP = (graph, settings) => (outputStream) => {
     const resultStream = streamToPromise(outputStream)
 
@@ -62,6 +90,8 @@ const createGenerateLP = (graph, settings) => (outputStream) => {
     // prepare constraints
     const constraints = []
     const lazyConstraints = []
+    const occlusionDistance = averageEdgeLength(graph) * (settings.occlusionDistanceMultiplier || Infinity)
+    const edgeBoundsByIndex = graph.edges.map(e => edgeBounds(graph, e))
 
     // generate model
     // octolinearity and edge length
@@ -128,7 +158,9 @@ const createGenerateLP = (graph, settings) => (outputStream) => {
                 numAdjacentEdgeConstraints++
             } else {
                 // handle non-adjacent edges
-                constraints.push(...occlusionConstraints(graph, outer, inner))
+                if (boundsGap(edgeBoundsByIndex[o], edgeBoundsByIndex[i]) <= occlusionDistance) {
+                    constraints.push(...occlusionConstraints(graph, outer, inner))
+                }
             }
         }
     }
