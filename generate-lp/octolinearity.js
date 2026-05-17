@@ -15,8 +15,9 @@ const createSetProduct = (settings) => (product, continuous, binary) => {
     ]
 }
 
-const createOctolinearityConstraints = (settings) => (graph, edge) => {
+const createOctolinearityConstraints = (settings) => (graph, edge, options = {}) => {
     const setProduct = createSetProduct(settings)
+    const { relaxCollinearity = false, relaxOctilinearity = false } = options
 
     const [mainDirection, secondaryDirection] = edge.sourceDirections
     const s = u.nodeIndex(graph, edge.source)
@@ -37,104 +38,71 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
     constraints.push(`a${e} + b${e} <= 1`)
     constraints.push(`c${e} + d${e} <= 1`)
 
-    // // min length 2 for edges between nodes with deg > 2
-    // const degrees = [edge.source, edge.target].map(x => u.degree(graph, x))
-    // if (l.max(degrees) > 2 && (edge.sourceDirections.includes(0) || edge.sourceDirections.includes(4))) {
-    //     // l >= (ySum - 1) * -2
-    //     // ySum = c${e}+d${e}
-    //     constraints.push(`l${e} + 2 c${e} + 2 d${e} >= 2`)
-    // }
-
-    switch (mainDirection) {
-        // 9 o'clock
-        case 0: {
-            // x2 - x1 = -l
-            // y2 - y1 = c*l - d*l
-            constraints.push(`a${e} = 0`)
-            constraints.push(`b${e} = 1`)
-            if (secondaryDirection === 7) constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 1) constraints.push(`c${e} = 0`)
-            break
+    if (relaxOctilinearity) {
+        // At least one direction component must be active
+        constraints.push(`a${e} + b${e} + c${e} + d${e} >= 1`)
+        // Don't fix binary values — let solver choose the best direction
+    } else {
+        // Fix binary values to enforce preferred geographic direction
+        switch (mainDirection) {
+            case 0: {
+                constraints.push(`a${e} = 0`)
+                constraints.push(`b${e} = 1`)
+                if (secondaryDirection === 7) constraints.push(`d${e} = 0`)
+                if (secondaryDirection === 1) constraints.push(`c${e} = 0`)
+                break
+            }
+            case 1: {
+                constraints.push(`a${e} = 0`)
+                constraints.push(`c${e} = 0`)
+                if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
+                if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
+                break
+            }
+            case 2: {
+                constraints.push(`c${e} = 0`)
+                constraints.push(`d${e} = 1`)
+                if (secondaryDirection === 3) constraints.push(`b${e} = 0`)
+                if (secondaryDirection === 1) constraints.push(`a${e} = 0`)
+                break
+            }
+            case 3: {
+                constraints.push(`b${e} = 0`)
+                constraints.push(`c${e} = 0`)
+                if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
+                if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
+                break
+            }
+            case 4: {
+                constraints.push(`a${e} = 1`)
+                constraints.push(`b${e} = 0`)
+                if (secondaryDirection === 5) constraints.push(`d${e} = 0`)
+                if (secondaryDirection === 3) constraints.push(`c${e} = 0`)
+                break
+            }
+            case 5: {
+                constraints.push(`b${e} = 0`)
+                constraints.push(`d${e} = 0`)
+                if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
+                if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
+                break
+            }
+            case 6: {
+                constraints.push(`c${e} = 1`)
+                constraints.push(`d${e} = 0`)
+                if (secondaryDirection === 7) constraints.push(`a${e} = 0`)
+                if (secondaryDirection === 5) constraints.push(`b${e} = 0`)
+                break
+            }
+            case 7: {
+                constraints.push(`a${e} = 0`)
+                constraints.push(`d${e} = 0`)
+                if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
+                if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
+                break
+            }
+            default: {throw new Error('unknown direction')}
         }
-
-        // 7.5 o'clock
-        case 1: {
-            // x2 - x1 = -b*l
-            // y2 - y1 = -d*l
-            constraints.push(`a${e} = 0`)
-            constraints.push(`c${e} = 0`)
-            if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
-            if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
-            break
-        }
-
-        // 6 o'clock
-        case 2: {
-            // x2 - x1 = a*l - b*l
-            // y2 - y1 = -l
-            constraints.push(`c${e} = 0`)
-            constraints.push(`d${e} = 1`)
-            if (secondaryDirection === 3) constraints.push(`b${e} = 0`)
-            if (secondaryDirection === 1) constraints.push(`a${e} = 0`)
-            break
-        }
-
-        // 4.5 o'clock
-        case 3: {
-            // x2 - x1 = a*l
-            // y2 - y1 = -d*l
-            constraints.push(`b${e} = 0`)
-            constraints.push(`c${e} = 0`)
-            if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
-            if (secondaryDirection === 2) constraints.push(`d${e} = 1`)
-            break
-        }
-
-        // 3 o'clock
-        case 4: {
-            // x2 - x1 = l
-            // y2 - y1 = c*l - d*l
-            constraints.push(`a${e} = 1`)
-            constraints.push(`b${e} = 0`)
-            if (secondaryDirection === 5) constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 3) constraints.push(`c${e} = 0`)
-            break
-        }
-
-        // 1.5 o'clock
-        case 5: {
-            // x2 - x1 = a*l
-            // y2 - y1 = c*l
-            constraints.push(`b${e} = 0`)
-            constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
-            if (secondaryDirection === 4) constraints.push(`a${e} = 1`)
-            break
-        }
-
-        // 12 o'clock
-        case 6: {
-            // x2 - x1 = a*l - b*l
-            // y2 - y1 = l
-            constraints.push(`c${e} = 1`)
-            constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 7) constraints.push(`a${e} = 0`)
-            if (secondaryDirection === 5) constraints.push(`b${e} = 0`)
-            break
-        }
-
-        // 10.5 o'clock
-        case 7: {
-            // x2 - x1 = -b*l
-            // y2 - y1 = c*l
-            constraints.push(`a${e} = 0`)
-            constraints.push(`d${e} = 0`)
-            if (secondaryDirection === 0) constraints.push(`b${e} = 1`)
-            if (secondaryDirection === 6) constraints.push(`c${e} = 1`)
-            break
-        }
-
-        default: {throw new Error('unknown direction')}
     }
 
     // force angle to 180° for some pairs of adjacent edges
@@ -142,6 +110,12 @@ const createOctolinearityConstraints = (settings) => (graph, edge) => {
     for (let aEdge of adjacentLineEdges) {
         const degrees = [edge.source, edge.target, aEdge.source, aEdge.target].map(x => u.degree(graph, x))
         const middle = graph.nodes.find(n => n.id === l.intersection([edge.source, edge.target], [aEdge.source, aEdge.target])[0])
+        const middleDegree = u.degree(graph, middle.id)
+
+        // When relaxCollinearity is set, skip 180-degree force at non-dummy transfer stations
+        if (relaxCollinearity && middleDegree > 2 && !middle.dummy) {
+            continue
+        }
 
         if(degrees.every(d => d === 2) || middle.dummy) {
             if (edge.target === aEdge.source || edge.source === aEdge.target) {

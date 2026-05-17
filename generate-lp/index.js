@@ -6,6 +6,7 @@ const streamToPromise = require('stream-to-promise')
 
 const createOcclusionConstraints = require('./occlusion')
 const createOctolinearityConstraints = require('./octolinearity')
+const { buildSpatialIndex, getAdjacentPairs, getCandidatePairs } = require('./spatial-filter')
 
 // sets left !== right using a boolean variable (note that negativeRight = (-1) * right)
 // see: https://math.stackexchange.com/a/1517850
@@ -17,7 +18,12 @@ const createNotEqual = (settings) => (left, negativeRight, boolean) => {
     ]
 }
 
-const createGenerateLP = (graph, settings) => (outputStream) => {
+const createGenerateLP = (graph, settings) => (outputStream, options = {}) => {
+    const {
+        relaxCollinearity = false,
+        relaxOctilinearity = false,
+        skipOcclusion = false
+    } = options
     const resultStream = streamToPromise(outputStream)
 
     const w = u.createWrite(outputStream)
@@ -65,71 +71,70 @@ const createGenerateLP = (graph, settings) => (outputStream) => {
 
     // generate model
     // octolinearity and edge length
-    graph.edges.forEach(e => constraints.push(...octolinearityConstraints(graph, e)))
+    const octiOptions = { relaxCollinearity, relaxOctilinearity }
+    graph.edges.forEach(e => constraints.push(...octolinearityConstraints(graph, e, octiOptions)))
 
     // edge occlusion
     let numAdjacentEdgeConstraints = 0
-    for (let o = 0; o < graph.edges.length; o++) {
-        for (let i = o+1; i < graph.edges.length; i++) {
-            const outer = graph.edges[o]
-            const inner = graph.edges[i]
 
-            // check if edges are adjacent
-            if (l.intersection([outer.source, outer.target], [inner.source, inner.target]).length > 0) {
-                // handle adjacent edges
+    // Use spatial index to filter non-adjacent edge pairs
+    const adjacentSet = getAdjacentPairs(graph)
 
-                // add variables
-                binary.h.push(`h${numAdjacentEdgeConstraints}`)
-                binary.oa.push(`oa${numAdjacentEdgeConstraints}`)
-                binary.ob.push(`ob${numAdjacentEdgeConstraints}`)
-                binary.oc.push(`oc${numAdjacentEdgeConstraints}`)
-                binary.od.push(`od${numAdjacentEdgeConstraints}`)
-                binary.ua.push(`ua${numAdjacentEdgeConstraints}`)
-                binary.ub.push(`ub${numAdjacentEdgeConstraints}`)
-                binary.uc.push(`uc${numAdjacentEdgeConstraints}`)
-                binary.ud.push(`ud${numAdjacentEdgeConstraints}`)
-                integer.q.push(`q${numAdjacentEdgeConstraints}`)
+    const handleAdjacentPair = (o, i) => {
+        const outer = graph.edges[o]
+        const inner = graph.edges[i]
 
-                // adjacent edges of the same line
-                if (l.intersection(outer.metadata.lines, inner.metadata.lines).length > 0) {
-                    // line bend
-                    coefficients.q.push(1)
-                    // only angles >= 90°
-                    constraints.push(`q${numAdjacentEdgeConstraints} <= 2`)
-                } else {
-                    // no line bend
-                    coefficients.q.push(.25)
-                }
+        // add variables
+        binary.h.push(`h${numAdjacentEdgeConstraints}`)
+        binary.oa.push(`oa${numAdjacentEdgeConstraints}`)
+        binary.ob.push(`ob${numAdjacentEdgeConstraints}`)
+        binary.oc.push(`oc${numAdjacentEdgeConstraints}`)
+        binary.od.push(`od${numAdjacentEdgeConstraints}`)
+        binary.ua.push(`ua${numAdjacentEdgeConstraints}`)
+        binary.ub.push(`ub${numAdjacentEdgeConstraints}`)
+        binary.uc.push(`uc${numAdjacentEdgeConstraints}`)
+        binary.ud.push(`ud${numAdjacentEdgeConstraints}`)
+        integer.q.push(`q${numAdjacentEdgeConstraints}`)
 
-                constraints.push(`q${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
+        // adjacent edges of the same line
+        if (l.intersection(outer.metadata.lines, inner.metadata.lines).length > 0) {
+            coefficients.q.push(1)
+            constraints.push(`q${numAdjacentEdgeConstraints} <= 2`)
+        } else {
+            coefficients.q.push(.25)
+        }
 
-                // check edge direction
-                if (outer.target === inner.source || outer.source === inner.target) {
-                    lazyConstraints.push(...notEqual(`3 a${o} - 3 b${o} + c${o} - d${o}`, `+ 3 a${i} - 3 b${i} + c${i} - d${i}`, `h${numAdjacentEdgeConstraints}`))
-                    // constraints.push(`a${o} - a${i} - oa${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`a${o} + a${i} - 2 ua${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`b${o} - b${i} - ob${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`b${o} + b${i} - 2 ub${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`c${o} - c${i} - oc${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`c${o} + c${i} - 2 uc${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`d${o} - d${i} - od${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`d${o} + d${i} - 2 ud${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
-                } else {
-                    lazyConstraints.push(...notEqual(`3 a${o} - 3 b${o} + c${o} - d${o}`, `- 3 a${i} + 3 b${i} - c${i} + d${i}`, `h${numAdjacentEdgeConstraints}`))
-                    // constraints.push(`a${o} - b${i} - oa${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`a${o} + b${i} - 2 ua${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`b${o} - a${i} - ob${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`b${o} + a${i} - 2 ub${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`c${o} - d${i} - oc${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`c${o} + d${i} - 2 uc${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} = 0`)
-                    // constraints.push(`d${o} - c${i} - od${numAdjacentEdgeConstraints} = 0`)
-                    constraints.push(`d${o} + c${i} - 2 ud${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
-                }
-                numAdjacentEdgeConstraints++
-            } else {
-                // handle non-adjacent edges
-                constraints.push(...occlusionConstraints(graph, outer, inner))
-            }
+        constraints.push(`q${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
+
+        if (outer.target === inner.source || outer.source === inner.target) {
+            lazyConstraints.push(...notEqual(`3 a${o} - 3 b${o} + c${o} - d${o}`, `+ 3 a${i} - 3 b${i} + c${i} - d${i}`, `h${numAdjacentEdgeConstraints}`))
+            constraints.push(`a${o} + a${i} - 2 ua${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`b${o} + b${i} - 2 ub${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`c${o} + c${i} - 2 uc${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`d${o} + d${i} - 2 ud${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
+        } else {
+            lazyConstraints.push(...notEqual(`3 a${o} - 3 b${o} + c${o} - d${o}`, `- 3 a${i} + 3 b${i} - c${i} + d${i}`, `h${numAdjacentEdgeConstraints}`))
+            constraints.push(`a${o} + b${i} - 2 ua${numAdjacentEdgeConstraints} - oa${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`b${o} + a${i} - 2 ub${numAdjacentEdgeConstraints} - ob${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`c${o} + d${i} - 2 uc${numAdjacentEdgeConstraints} - oc${numAdjacentEdgeConstraints} = 0`)
+            constraints.push(`d${o} + c${i} - 2 ud${numAdjacentEdgeConstraints} - od${numAdjacentEdgeConstraints} = 0`)
+        }
+        numAdjacentEdgeConstraints++
+    }
+
+    // Process all adjacent pairs (unconditionally)
+    for (const pairKey of adjacentSet) {
+        const [o, i] = pairKey.split(',').map(Number)
+        handleAdjacentPair(o, i)
+    }
+
+    // Process non-adjacent pairs with spatial filtering
+    if (!skipOcclusion) {
+        const spatialIndex = buildSpatialIndex(graph)
+        const candidatePairs = getCandidatePairs(graph, spatialIndex)
+
+        for (const [o, i] of candidatePairs) {
+            constraints.push(...occlusionConstraints(graph, graph.edges[o], graph.edges[i]))
         }
     }
 

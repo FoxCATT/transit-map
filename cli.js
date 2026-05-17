@@ -13,7 +13,8 @@ const transitMap = require('.')
 const pkg = require('./package.json')
 
 const argv = mri(process.argv.slice(2), {
-	boolean: ['help', 'h', 'version', 'v', 'silent', 's', 'graph', 'g', 'invert-y', 'y']
+	boolean: ['help', 'h', 'version', 'v', 'silent', 's', 'graph', 'g', 'invert-y', 'y', 'snap'],
+	string: ['mode', 'm', 'time-limit']
 })
 
 if (argv.help === true || argv.h === true) {
@@ -31,6 +32,9 @@ Options:
 	--invert-y     -y  Invert the Y axis in SVG result.
 	--log      	   -l  Show solver logging to stderr.
 	--tmp-dir      -t  Directory to store intermediate files. Default: unique tmp dir.
+	--mode         -m  Solver mode: auto, exact, relaxed, fixed, no-occlusion. Default: auto.
+	--time-limit       Time limit in seconds for SCIP solver. Default: 300.
+	--snap             Enable octilinear snapping post-processing.
 
 	--help         -h  Show this help message.
 	--version      -v  Show the version number.
@@ -53,7 +57,10 @@ const config = {
 	inputFile: argv['input-file'] || argv.i || null,
 	outputFile: argv['output-file'] || argv.o || null,
 	returnGraph: argv['graph'] || argv.g || false,
-	invertY: argv['invert-y'] || argv.y || false
+	invertY: argv['invert-y'] || argv.y || false,
+	mode: argv['mode'] || argv.m || 'auto',
+	snap: argv['snap'] || false,
+	timeLimit: parseInt(argv['time-limit']) || 300
 }
 
 const main = async () => {
@@ -66,13 +73,17 @@ const main = async () => {
 
 	let result
 	if (config.source) result = graph
-	else result = await transitMap(graph, l.pick(config, ['workDir', 'verbose']))
+	else result = await transitMap(graph, l.pick(config, ['workDir', 'verbose', 'mode', 'snap', 'timeLimit', 'invertY', 'returnGraph']))
 
 	let output
-	if (config.returnGraph) output = JSON.stringify(result)
-	else {
+	if (config.returnGraph) {
+		output = JSON.stringify(result)
+	} else if (config.source) {
 		const svg = graphToSVG(result, config.invertY)
 		output = svgToString(svg)
+	} else {
+		// transitMap already returns an SVG string when not in graph/source mode
+		output = result
 	}
 
 	if (config.outputFile) await writeFile(config.outputFile, output)
