@@ -23,7 +23,30 @@ const settings = {
     maxWidth: 300,
     maxHeight: 300,
     minEdgeLength: 1,
-    maxEdgeLength: 8
+    maxEdgeLength: 8,
+    occlusionDistanceMultiplier: Infinity,
+    nodeSeparationDistanceMultiplier: 0,
+    adjacentAngleConstraints: true,
+    solverTimeLimit: 300,
+    solverGapLimit: 0.1
+}
+
+const scaleSettings = (graph) => {
+    const nEdges = graph.edges.length
+    if (nEdges > 200) {
+        const scale = Math.ceil(Math.sqrt(nEdges / 100))
+        return {
+            maxWidth: 300 * scale,
+            maxHeight: 300 * scale,
+            maxEdgeLength: 8 * Math.min(scale, 3),
+            occlusionDistanceMultiplier: 2,
+            nodeSeparationDistanceMultiplier: 4,
+            adjacentAngleConstraints: false,
+            solverTimeLimit: 180,
+            solverGapLimit: 0.2
+        }
+    }
+    return {}
 }
 
 const defaults = {
@@ -39,20 +62,23 @@ const defaults = {
 }
 
 const Solver = (networkGraph) => {
+    const scaled = scaleSettings(networkGraph)
+    const effectiveSettings = Object.assign({}, settings, scaled)
     const graph = prepareGraph(networkGraph)
-    const generateLP = createGenerateLP(graph, settings)
-    const reviseSolution = createReviseSolution(graph, settings)
+    const generateLP = createGenerateLP(graph, effectiveSettings)
+    const reviseSolution = createReviseSolution(graph, effectiveSettings)
 
-    return ({generateLP, reviseSolution})
+    return ({generateLP, reviseSolution, effectiveSettings})
 }
 
-const runSolver = (cwd, solverPath, timeLimit, verbose=false) => {
+const runSolver = (cwd, solverPath, timeLimit, gapLimit, verbose=false) => {
     const problemPath = path.resolve(cwd, 'problem.lp')
     const solutionPath = path.resolve(cwd, 'solution.sol')
 
     const solverPromise = spawn(solverPath, [
-        '-c', `read ${problemPath}`,
         '-c', `set limits time ${timeLimit}`,
+        '-c', `set limits gap ${gapLimit}`,
+        '-c', `read ${problemPath}`,
         '-c', 'set heuristics emphasis aggressive',
         '-c', 'optimize',
         '-c', `write solution ${solutionPath}`,
@@ -68,6 +94,8 @@ const transitMap = async (networkGraph, opt) => {
     const options = l.merge({}, defaults, opt)
     if (!options.workDir) options.workDir = await pTmpDir({prefix: 'transit-map-'})
 
+    const gapLimit = 0.1
+
     // Fixed mode: use geographic directions, pure continuous LP, solves instantly
     if (options.mode === 'fixed') {
         const graph = prepareGraph(networkGraph)
@@ -78,7 +106,7 @@ const transitMap = async (networkGraph, opt) => {
         await generateLP(lpStream)
 
         try {
-            await runSolver(options.workDir, options.scipPath, options.timeLimit || 60, options.verbose)
+            await runSolver(options.workDir, options.scipPath, options.timeLimit || 60, gapLimit, options.verbose)
         } catch (e) {
             throw new Error('SCIP solver error: ' + e.message)
         }
@@ -118,7 +146,7 @@ const transitMap = async (networkGraph, opt) => {
         relaxationLevels.push({ name: 'no-occlusion', relaxCollinearity: true, relaxOctilinearity: true, skipOcclusion: true })
     } else { // 'auto' (default) — try fastest levels first
         relaxationLevels.push(
-            { name: 'fixed', useFixed: true },                                         // ~1s, always feasible
+            { name: 'fixed', useFixed: true },
             { name: 'exact', relaxCollinearity: false, relaxOctilinearity: false, skipOcclusion: false },
             { name: 'relax-collinearity', relaxCollinearity: true, relaxOctilinearity: false, skipOcclusion: false },
             { name: 'soft-octi', relaxCollinearity: true, relaxOctilinearity: true, skipOcclusion: false },
@@ -134,6 +162,8 @@ const transitMap = async (networkGraph, opt) => {
             console.error(`Trying relaxation level: ${level.name}...`)
         }
 
+        const tl = level.useFixed ? (options.timeLimit || 60) : options.timeLimit
+
         // Generate the LP for this relaxation level
         const lpStream = fs.createWriteStream(path.resolve(options.workDir, 'problem.lp'))
         if (level.useFixed) {
@@ -145,8 +175,7 @@ const transitMap = async (networkGraph, opt) => {
         }
 
         try {
-            const tl = level.useFixed ? (options.timeLimit || 60) : options.timeLimit
-            await (runSolver(options.workDir, options.scipPath, tl, options.verbose).catch(e => {
+            await (runSolver(options.workDir, options.scipPath, tl, gapLimit, options.verbose).catch(e => {
                 throw new Error('SCIP solver error: ' + e.message)
             }))
         } catch (e) {
@@ -178,7 +207,6 @@ const transitMap = async (networkGraph, opt) => {
         throw lastError || new Error('All relaxation levels failed')
     }
 
-    // Apply octilinear snapping if requested (for relaxed/two-phase modes)
     if (options.snap) {
         const octiSnap = require('./scripts/octi-snap')
         solution = octiSnap.snapToOctilinear(solution)

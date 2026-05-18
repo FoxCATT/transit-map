@@ -4,8 +4,6 @@ const l = require('lodash')
 const u = require('./util')
 
 // sets a new variable as a product of a continuous and a binary
-// continuous is the edge length in this case, which is bounded by upperBound
-// see: https://www.leandro-coelho.com/linearization-product-variables/
 const createSetProduct = (settings) => (product, continuous, binary) => {
     const upperBound = settings.maxEdgeLength + 1
     return [
@@ -41,7 +39,6 @@ const createOctolinearityConstraints = (settings) => (graph, edge, options = {})
     if (relaxOctilinearity) {
         // At least one direction component must be active
         constraints.push(`a${e} + b${e} + c${e} + d${e} >= 1`)
-        // Don't fix binary values — let solver choose the best direction
     } else {
         // Fix binary values to enforce preferred geographic direction
         switch (mainDirection) {
@@ -105,7 +102,7 @@ const createOctolinearityConstraints = (settings) => (graph, edge, options = {})
         }
     }
 
-    // force angle to 180° for some pairs of adjacent edges
+    // force angle to 180 for some pairs of adjacent edges
     const adjacentLineEdges = graph.edges.filter(e => l.intersection(e.metadata.lines, edge.metadata.lines).length > 0 && l.intersection([e.source, e.target], [edge.source, edge.target]).length === 1)
     for (let aEdge of adjacentLineEdges) {
         const degrees = [edge.source, edge.target, aEdge.source, aEdge.target].map(x => u.degree(graph, x))
@@ -119,15 +116,15 @@ const createOctolinearityConstraints = (settings) => (graph, edge, options = {})
 
         if(degrees.every(d => d === 2) || middle.dummy) {
             if (edge.target === aEdge.source || edge.source === aEdge.target) {
-                if (l.isEqual(aEdge.sourceDirections, edge.sourceDirections)) { //  || middle.dummy
+                if (l.isEqual(aEdge.sourceDirections, edge.sourceDirections)) {
                     constraints.push(`a${e} - a${u.edgeIndex(graph, aEdge)} = 0`)
                     constraints.push(`b${e} - b${u.edgeIndex(graph, aEdge)} = 0`)
                     constraints.push(`c${e} - c${u.edgeIndex(graph, aEdge)} = 0`)
                     constraints.push(`d${e} - d${u.edgeIndex(graph, aEdge)} = 0`)
                 }
             }
-            else {
-                if (l.isEqual(aEdge.sourceDirections, edge.targetDirections)) { //  || middle.dummy
+            else {
+                if (l.isEqual(aEdge.sourceDirections, edge.targetDirections)) {
                     constraints.push(`a${e} - b${u.edgeIndex(graph, aEdge)} = 0`)
                     constraints.push(`b${e} - a${u.edgeIndex(graph, aEdge)} = 0`)
                     constraints.push(`c${e} - d${u.edgeIndex(graph, aEdge)} = 0`)

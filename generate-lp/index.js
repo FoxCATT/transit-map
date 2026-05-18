@@ -8,8 +8,7 @@ const createOcclusionConstraints = require('./occlusion')
 const createOctolinearityConstraints = require('./octolinearity')
 const { buildSpatialIndex, getAdjacentPairs, getCandidatePairs } = require('./spatial-filter')
 
-// sets left !== right using a boolean variable (note that negativeRight = (-1) * right)
-// see: https://math.stackexchange.com/a/1517850
+// sets left !== right using a boolean variable
 const createNotEqual = (settings) => (left, negativeRight, boolean) => {
     const upperBound = settings.maxEdgeLength + 1
     return [
@@ -142,16 +141,12 @@ const createGenerateLP = (graph, settings) => (outputStream, options = {}) => {
     // 1. objective function
     w('Minimize')
         wt('obj:')
-        // sum of squared edge length variables l_n
         const lengths = continuous.l.map(l => `3 ${l}` ).join(' + ')
-        // sum of angle differences in all "dimensions"
         const angles = integer.q.map((q, index) => `${4 * coefficients.q[index]} ${q}`).join(' + ')
-        // write function
         wt(`${angles} + ${lengths}`)
 
     // 2. constraints
     w('Subject To')
-        // fix one coordinate pair
         wt(`vx0 = ${settings.offset}`)
         wt(`vy0 = ${settings.offset}`)
 
@@ -163,55 +158,33 @@ const createGenerateLP = (graph, settings) => (outputStream, options = {}) => {
 
     // 4. bounds
     w('Bounds')
-        // edge length variables l
         continuous.l.forEach(l => wt(`${settings.minEdgeLength} <= ${l} <= ${settings.maxEdgeLength}`))
-        // x-coordinate per node
         continuous.vx.forEach(vx => wt(`${settings.offset - settings.maxWidth/2} <= ${vx} <= ${settings.offset + settings.maxWidth/2}`))
-        // y-coordinate per node
         continuous.vy.forEach(vy => wt(`${settings.offset - settings.maxHeight/2} <= ${vy} <= ${settings.offset + settings.maxHeight/2}`))
-        // helper variables for products with a
         continuous.pa.forEach(pa => wt(`0 <= ${pa}`))
-        // helper variables for products with b
         continuous.pb.forEach(pb => wt(`0 <= ${pb}`))
-        // helper variables for products with c
         continuous.pc.forEach(pc => wt(`0 <= ${pc}`))
-        // helper variables for products with d
         continuous.pd.forEach(pd => wt(`0 <= ${pd}`))
-        // third helper variables for edge angles q
         integer.q.forEach(q => wt(`0 <= ${q} <= 3`))
 
     // 5. integer variables
     w('General')
-        // third helper variables for edge angles q
         integer.q.forEach(q => wt(q))
 
     // 6. binary variables
     w('Binary')
-        // first direction helper variables a
         binary.a.forEach(a => wt(a))
-        // second direction helper variables b
         binary.b.forEach(b => wt(b))
-        // third direction helper variables c
         binary.c.forEach(c => wt(c))
-        // fourth direction helper variables d
         binary.d.forEach(d => wt(d))
-        // adjacent edge occlusion helper variables h
         binary.h.forEach(h => wt(h))
-        // first helper variables for edge angles oa
         binary.oa.forEach(oa => wt(oa))
-        // first helper variables for edge angles ob
         binary.ob.forEach(ob => wt(ob))
-        // first helper variables for edge angles oc
         binary.oc.forEach(oc => wt(oc))
-        // first helper variables for edge angles od
         binary.od.forEach(od => wt(od))
-        // second helper variables for edge angles ua
         binary.ua.forEach(ua => wt(ua))
-        // second helper variables for edge angles ub
         binary.ub.forEach(ub => wt(ub))
-        // second helper variables for edge angles uc
         binary.uc.forEach(uc => wt(uc))
-        // second helper variables for edge angles ud
         binary.ud.forEach(ud => wt(ud))
 
     // 7. end
